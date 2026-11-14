@@ -840,7 +840,7 @@ export default function MusicPlayer() {
         {/* Header */}
         <header className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <img src={`${process.env.NEXT_PUBLIC_BASE_PATH}/logo.png`} alt="SonicFlow logo" className="h-9 w-9 drop-shadow-md" />
+            <img src="/logo.png" alt="SonicFlow logo" className="h-9 w-9 drop-shadow-md" />
             <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">SonicFlow</h1>
           </div>
           <div className="flex items-center gap-2">
