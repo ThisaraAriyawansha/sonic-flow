@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /* ---------- constants ---------- */
 
@@ -128,6 +128,50 @@ async function renderWithEq(file, bass, treble, onStage) {
   return encodeMp3(rendered, (p) => onStage?.("mp3", p));
 }
 
+/* ---------- YouTube ---------- */
+
+const YT_PLACEHOLDER = "YouTube video";
+
+// Accepts watch, youtu.be, shorts, embed, live and music.youtube.com links, or a bare 11-char id.
+function parseYouTubeId(input = "") {
+  const raw = input.trim();
+  if (/^[\w-]{11}$/.test(raw)) return raw;
+  try {
+    const u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    const host = u.hostname.replace(/^(www\.|m\.|music\.)/, "");
+    let id = null;
+    if (host === "youtu.be") id = u.pathname.split("/")[1];
+    else if (host === "youtube.com" || host === "youtube-nocookie.com") {
+      id = u.searchParams.get("v") || u.pathname.match(/^\/(?:shorts|embed|live|v)\/([^/?#]+)/)?.[1];
+    }
+    return id && /^[\w-]{11}$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+let ytApiPromise = null;
+function loadYouTubeApi() {
+  if (window.YT?.Player) return Promise.resolve(window.YT);
+  if (!ytApiPromise) {
+    ytApiPromise = new Promise((resolve, reject) => {
+      const prev = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        prev?.();
+        resolve(window.YT);
+      };
+      const s = document.createElement("script");
+      s.src = "https://www.youtube.com/iframe_api";
+      s.onerror = () => {
+        ytApiPromise = null;
+        reject(new Error("Couldn't load YouTube"));
+      };
+      document.head.appendChild(s);
+    });
+  }
+  return ytApiPromise;
+}
+
 /* ---------- icons ---------- */
 
 const Icon = {
@@ -219,7 +263,7 @@ const Icon = {
 
 /* ---------- small components ---------- */
 
-function Artwork({ name, size = "full", playing }) {
+function Artwork({ name, image, size = "full", playing }) {
   const h = hueFor(name);
   return (
     <div
@@ -227,12 +271,14 @@ function Artwork({ name, size = "full", playing }) {
         size === "full" ? "w-full rounded-[22px] shadow-2xl" : "h-11 w-11 shrink-0 rounded-lg"
       }`}
       style={{
-        background: name
+        background: image
+          ? `center / cover no-repeat url("${image}"), #000`
+          : name
           ? `linear-gradient(135deg, hsl(${h} 80% 62%), hsl(${(h + 50) % 360} 75% 45%) 55%, hsl(${(h + 110) % 360} 70% 30%))`
           : "var(--track)",
       }}
     >
-      <div className={`${size === "full" ? "h-1/4 w-1/4" : "h-5 w-5"} text-white/85 drop-shadow`}>{Icon.note}</div>
+      {!image && <div className={`${size === "full" ? "h-1/4 w-1/4" : "h-5 w-5"} text-white/85 drop-shadow`}>{Icon.note}</div>}
       {size !== "full" && playing && (
         <div className="absolute inset-0 flex items-end justify-center gap-[3px] bg-black/40 pb-3">
           {[0, 0.2, 0.4].map((d) => (
@@ -318,8 +364,14 @@ export default function MusicPlayer() {
   const trebleRef = useRef(null);
   const fileInputRef = useRef(null);
   const pendingPlay = useRef(false);
+  const ytHostRef = useRef(null);
+  const ytRef = useRef(null); // ready YT.Player instance
+  const ytPromiseRef = useRef(null);
+  const ytLoadedId = useRef(null); // videoId currently loaded in the player
+  const ytEvents = useRef({});
 
   const [tracks, setTracks] = useState([]);
+  const [ytUrl, setYtUrl] = useState("");
   const [current, setCurrent] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [time, setTime] = useState(0);
@@ -337,6 +389,7 @@ export default function MusicPlayer() {
   const show = (name) => (tab === name ? "flex" : "hidden lg:flex");
 
   const track = tracks[current];
+  const isYt = track?.kind === "youtube";
   const hue = hueFor(track?.name);
 
   /* --- load saved settings --- */
@@ -391,13 +444,96 @@ export default function MusicPlayer() {
     trebleRef.current.gain.setTargetAtTime(treble, ctx.currentTime, 0.03);
   }, [bass, treble]);
 
-  // Start playback after the <audio> src has switched to a new track.
+  /* --- YouTube player (official embed, created on first use) --- */
+  const getYT = () => {
+    if (!ytPromiseRef.current) {
+      ytPromiseRef.current = loadYouTubeApi()
+        .then(
+          (YT) =>
+            new Promise((resolve) => {
+              // YT replaces this element with an iframe, so keep it outside React's tree.
+              const el = document.createElement("div");
+              ytHostRef.current.appendChild(el);
+              const p = new YT.Player(el, {
+                width: "100%",
+                height: "100%",
+                playerVars: { playsinline: 1, controls: 0, rel: 0, disablekb: 1, iv_load_policy: 3 },
+                events: {
+                  onReady: () => {
+                    ytRef.current = p;
+                    p.setVolume(Math.round(ytEvents.current.volume * 100));
+                    resolve(p);
+                  },
+                  onStateChange: (e) => ytEvents.current.onState(e.data, p),
+                  onError: (e) => ytEvents.current.onError(e.data),
+                },
+              });
+            })
+        )
+        .catch((err) => {
+          ytPromiseRef.current = null;
+          throw err;
+        });
+    }
+    return ytPromiseRef.current;
+  };
+
+  const renameTrack = (id, patch) =>
+    setTracks((prev) => {
+      const i = prev.findIndex((t) => t.id === id);
+      if (i < 0 || Object.keys(patch).every((k) => !patch[k] || prev[i][k] === patch[k])) return prev;
+      const copy = [...prev];
+      copy[i] = { ...prev[i], ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v)) };
+      return copy;
+    });
+
+  // Switch between the <audio> element and the YouTube player when the track changes.
   useEffect(() => {
-    if (!pendingPlay.current || !audioRef.current) return;
+    const t = tracks[current];
+    const autoplay = pendingPlay.current;
     pendingPlay.current = false;
-    ctxRef.current?.resume();
-    audioRef.current.play().catch(() => {});
+
+    if (t?.kind === "youtube") {
+      audioRef.current?.pause();
+      if (ytLoadedId.current !== t.videoId) {
+        ytLoadedId.current = t.videoId;
+        setPlaying(false);
+        setTime(0);
+        setDuration(0);
+        getYT()
+          .then((p) => (autoplay ? p.loadVideoById(t.videoId) : p.cueVideoById(t.videoId)))
+          .catch(() => showToast("Couldn't load YouTube — check your connection"));
+      } else if (autoplay) {
+        ytRef.current?.playVideo();
+      }
+      return;
+    }
+
+    if (ytLoadedId.current) {
+      ytLoadedId.current = null;
+      ytRef.current?.pauseVideo();
+      setPlaying(false);
+      setTime(0);
+    }
+    if (autoplay && audioRef.current) {
+      ctxRef.current?.resume();
+      audioRef.current.play().catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current, tracks]);
+
+  // The YT player has no timeupdate event, so poll while it plays.
+  useEffect(() => {
+    if (!isYt || !playing) return;
+    const id = setInterval(() => {
+      const p = ytRef.current;
+      if (!p?.getCurrentTime) return;
+      setTime(p.getCurrentTime());
+      const d = p.getDuration();
+      if (d) setDuration(d);
+    }, 250);
+    return () => clearInterval(id);
+  }, [isYt, playing]);
 
   /* --- library --- */
   const addFiles = (fileList) => {
@@ -413,8 +549,33 @@ export default function MusicPlayer() {
     setTracks((prev) => [...prev, ...newTracks]);
   };
 
+  // Adds a YouTube link; plays it right away unless something is already playing.
+  const addYouTube = (input) => {
+    const videoId = parseYouTubeId(input);
+    if (!videoId) {
+      showToast("That doesn't look like a YouTube link");
+      return false;
+    }
+    const id = `yt-${videoId}-${Math.random().toString(36).slice(2)}`;
+    setTracks((prev) => [
+      ...prev,
+      { id, kind: "youtube", videoId, name: YT_PLACEHOLDER, ext: "YouTube", image: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` },
+    ]);
+    if (!playing) {
+      pendingPlay.current = true;
+      setCurrent(tracks.length);
+      setTab("player");
+    } else showToast("Added to your library");
+
+    fetch(`https://www.youtube.com/oembed?format=json&url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && renameTrack(id, { name: d.title, artist: d.author_name }))
+      .catch(() => {});
+    return true;
+  };
+
   const removeTrack = (i) => {
-    URL.revokeObjectURL(tracks[i].url);
+    if (tracks[i].url) URL.revokeObjectURL(tracks[i].url);
     const nextTracks = tracks.filter((_, idx) => idx !== i);
     setTracks(nextTracks);
     if (i < current) setCurrent((c) => c - 1);
@@ -428,7 +589,17 @@ export default function MusicPlayer() {
 
   /* --- transport --- */
   const playIndex = (index) => {
-    initAudio();
+    const t = tracks[index];
+    if (index === current && t?.kind === "youtube") {
+      getYT()
+        .then((p) => {
+          p.seekTo(0, true);
+          p.playVideo();
+        })
+        .catch(() => {});
+      return;
+    }
+    if (t?.kind !== "youtube") initAudio();
     if (index === current && audioRef.current?.src) {
       audioRef.current.currentTime = 0;
       ctxRef.current?.resume();
@@ -439,21 +610,28 @@ export default function MusicPlayer() {
     setCurrent(index);
   };
 
-  const togglePlay = useCallback(() => {
-    if (!tracks.length) return;
+  const togglePlay = () => {
+    if (!track) return;
+    if (isYt) {
+      const p = ytRef.current;
+      if (!p) return;
+      const s = p.getPlayerState();
+      if (s === 1 || s === 3) p.pauseVideo(); // playing / buffering
+      else p.playVideo();
+      return;
+    }
     initAudio();
     ctxRef.current.resume();
     const audio = audioRef.current;
     if (audio.paused) audio.play().catch(() => {});
     else audio.pause();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tracks.length, bass, treble]);
+  };
 
   const next = () => tracks.length && playIndex((current + 1) % tracks.length);
   const prev = () => {
     if (!tracks.length) return;
-    if (audioRef.current.currentTime > 3) {
-      audioRef.current.currentTime = 0;
+    if (time > 3) {
+      seekTo(0);
       return;
     }
     playIndex((current - 1 + tracks.length) % tracks.length);
@@ -464,34 +642,75 @@ export default function MusicPlayer() {
     else setPlaying(false);
   };
 
-  const seek = (e) => {
-    const t = Number(e.target.value);
-    audioRef.current.currentTime = t;
+  const seekTo = (t) => {
+    t = Math.max(0, Math.min(t, duration || t));
+    if (isYt) ytRef.current?.seekTo(t, true);
+    else if (audioRef.current) audioRef.current.currentTime = t;
     setTime(t);
   };
+  const seek = (e) => seekTo(Number(e.target.value));
 
   const changeVolume = (v) => {
     setVolume(v);
     audioRef.current.volume = v;
+    ytRef.current?.setVolume(Math.round(v * 100));
+  };
+
+  // Events from the YouTube player, routed through a ref so they always see fresh state.
+  ytEvents.current = {
+    volume,
+    onState: (state, p) => {
+      if (!isYt) return;
+      if (state === 1) {
+        setPlaying(true);
+        setDuration(p.getDuration());
+        const title = p.getVideoData?.()?.title;
+        if (track.name === YT_PLACEHOLDER && title) renameTrack(track.id, { name: title, artist: p.getVideoData().author });
+      } else if (state === 2 || state === 5) {
+        setPlaying(false);
+        if (state === 5) setDuration(p.getDuration());
+      } else if (state === 0) {
+        setPlaying(false);
+        onEnded();
+      }
+    },
+    onError: (code) => {
+      setPlaying(false);
+      showToast(code === 101 || code === 150 ? "The owner doesn't allow this video outside YouTube" : "This YouTube video can't be played");
+    },
   };
 
   // Space = play/pause, arrows = seek (ignored while typing or on sliders)
   useEffect(() => {
     const onKey = (e) => {
       if (e.target.closest?.("input, textarea, button")) return;
+      const a = actionsRef.current;
       if (e.code === "Space") {
         e.preventDefault();
-        togglePlay();
-      } else if (e.code === "ArrowRight" && audioRef.current) audioRef.current.currentTime += 5;
-      else if (e.code === "ArrowLeft" && audioRef.current) audioRef.current.currentTime -= 5;
+        a.togglePlay();
+      } else if (e.code === "ArrowRight") a.seekBy(5);
+      else if (e.code === "ArrowLeft") a.seekBy(-5);
+    };
+    // Pasting a YouTube link anywhere on the page (outside a text field) adds it.
+    const onPaste = (e) => {
+      if (e.target.closest?.("input, textarea")) return;
+      const text = e.clipboardData?.getData("text") || "";
+      if (parseYouTubeId(text)) {
+        e.preventDefault();
+        actionsRef.current.addYouTube(text);
+      }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [togglePlay]);
+    window.addEventListener("paste", onPaste);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("paste", onPaste);
+    };
+  }, []);
 
   // Lock-screen / notification controls on phones (Media Session API).
   const actionsRef = useRef({});
-  actionsRef.current = { togglePlay, next, prev };
+  actionsRef.current = { togglePlay, next, prev, seekTo, addYouTube, seekBy: (d) => seekTo(time + d) };
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
     const ms = navigator.mediaSession;
@@ -506,13 +725,18 @@ export default function MusicPlayer() {
     set("nexttrack", () => a.current.next());
     set("previoustrack", () => a.current.prev());
     set("seekto", (d) => {
-      if (audioRef.current && d.seekTime != null) audioRef.current.currentTime = d.seekTime;
+      if (d.seekTime != null) a.current.seekTo(d.seekTime);
     });
   }, []);
   useEffect(() => {
     if (!("mediaSession" in navigator) || !track) return;
     try {
-      navigator.mediaSession.metadata = new MediaMetadata({ title: track.name, artist: "SonicFlow", album: track.ext });
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: track.name,
+        artist: track.artist || "SonicFlow",
+        album: track.ext,
+        artwork: track.image ? [{ src: track.image, sizes: "320x180", type: "image/jpeg" }] : [],
+      });
     } catch {}
   }, [track]);
   useEffect(() => {
@@ -593,11 +817,11 @@ export default function MusicPlayer() {
       <audio
         ref={audioRef}
         src={track?.url}
-        onTimeUpdate={(e) => setTime(e.target.currentTime)}
-        onLoadedMetadata={(e) => setDuration(e.target.duration)}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={onEnded}
+        onTimeUpdate={(e) => !isYt && setTime(e.target.currentTime)}
+        onLoadedMetadata={(e) => !isYt && setDuration(e.target.duration)}
+        onPlay={() => !isYt && setPlaying(true)}
+        onPause={() => !isYt && setPlaying(false)}
+        onEnded={() => !isYt && onEnded()}
       />
 
       <input
@@ -616,7 +840,7 @@ export default function MusicPlayer() {
         {/* Header */}
         <header className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <img src="/logo.png" alt="SonicFlow logo" className="h-9 w-9 drop-shadow-md" />
+            <img src={`${process.env.NEXT_PUBLIC_BASE_PATH}/logo.png`} alt="SonicFlow logo" className="h-9 w-9 drop-shadow-md" />
             <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">SonicFlow</h1>
           </div>
           <div className="flex items-center gap-2">
@@ -647,8 +871,15 @@ export default function MusicPlayer() {
           {/* Now Playing */}
           <section className={`${show("player")} glass min-w-0 flex-col rounded-[28px] p-5 sm:p-8`}>
             <div className="mx-auto flex w-full min-w-0 max-w-md flex-col items-center">
-              <div className={`w-full max-w-[min(340px,40svh)] transition-transform duration-500 ${playing ? "scale-100" : "scale-[.92]"}`}>
-                <Artwork name={track?.name} />
+              <div className={`relative w-full max-w-[min(340px,40svh)] transition-transform duration-500 ${playing ? "scale-100" : "scale-[.92]"}`}>
+                <Artwork name={track?.name} image={track?.image} />
+                {/* YouTube's embedded player; it must stay visible to comply with YouTube's terms. */}
+                <div
+                  ref={ytHostRef}
+                  className={`absolute inset-0 overflow-hidden rounded-[22px] bg-black shadow-2xl [&_iframe]:h-full [&_iframe]:w-full ${
+                    isYt ? "" : "hidden"
+                  }`}
+                />
               </div>
 
               <div className="mt-7 w-full min-w-0 text-center">
@@ -659,7 +890,9 @@ export default function MusicPlayer() {
                   {track?.name || "Not Playing"}
                 </h2>
                 <p className="mt-1 text-sm" style={muted}>
-                  {track ? `${track.ext} · Track ${current + 1} of ${tracks.length}` : "Add songs to get started"}
+                  {track
+                    ? `${track.artist ? `${track.artist} · ` : ""}${track.ext} · Track ${current + 1} of ${tracks.length}`
+                    : "Add songs or paste a YouTube link to get started"}
                 </p>
                 {!track && (
                   <button
@@ -705,7 +938,7 @@ export default function MusicPlayer() {
                   className="tap flex h-16 w-16 items-center justify-center rounded-full p-4 shadow-lg disabled:opacity-30"
                   style={{ background: "var(--text)", color: "var(--bg)" }}
                 >
-                  <span className={playing ? "" : "translate-x-[2px]"}>{playing ? Icon.pause : Icon.play}</span>
+                  <span className="block h-full w-full">{playing ? Icon.pause : Icon.play}</span>
                 </button>
                 <button onClick={next} disabled={!track} aria-label="Next" className="tap h-12 w-12 rounded-full p-2.5 hover:opacity-70 disabled:opacity-30">
                   {Icon.next}
@@ -774,7 +1007,7 @@ export default function MusicPlayer() {
 
               <button
                 onClick={exportTrack}
-                disabled={!track || exporting}
+                disabled={!track || isYt || exporting}
                 className="tap mt-7 flex w-full items-center justify-center gap-2 rounded-2xl py-3.5 text-[15px] font-semibold disabled:opacity-40 lg:py-3 lg:text-sm"
                 style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
               >
@@ -799,7 +1032,9 @@ export default function MusicPlayer() {
                 </div>
               )}
               <p className="mt-2 text-center text-[11px]" style={muted}>
-                320 kbps MP3 with your bass &amp; treble applied, ready to copy to a USB drive for your speaker.
+                {isYt
+                  ? "Bass, treble and download work on your own audio files. YouTube plays in its own protected player, so the EQ can't reach it."
+                  : "320 kbps MP3 with your bass & treble applied, ready to copy to a USB drive for your speaker."}
               </p>
             </section>
 
@@ -811,6 +1046,35 @@ export default function MusicPlayer() {
                   {tracks.length} {tracks.length === 1 ? "song" : "songs"}
                 </span>
               </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (addYouTube(ytUrl)) setYtUrl("");
+                }}
+                className="mb-4 flex gap-2"
+              >
+                <input
+                  type="text"
+                  inputMode="url"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={ytUrl}
+                  onChange={(e) => setYtUrl(e.target.value)}
+                  placeholder="Paste a YouTube link"
+                  aria-label="YouTube link"
+                  className="min-w-0 flex-1 rounded-full px-4 py-2.5 text-base outline-none focus:ring-2 sm:text-sm"
+                  style={{ background: "var(--hover)", color: "var(--text)", "--tw-ring-color": "var(--accent)" }}
+                />
+                <button
+                  type="submit"
+                  disabled={!ytUrl.trim()}
+                  className="tap shrink-0 rounded-full px-4 text-sm font-semibold text-white disabled:opacity-40"
+                  style={{ background: "var(--accent)" }}
+                >
+                  Play
+                </button>
+              </form>
 
               {tracks.length === 0 ? (
                 <button
@@ -837,7 +1101,7 @@ export default function MusicPlayer() {
                           style={{ background: active ? "var(--hover)" : "transparent" }}
                         >
                           <button onClick={() => playIndex(i)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                            <Artwork name={t.name} size="sm" playing={active && playing} />
+                            <Artwork name={t.name} image={t.image} size="sm" playing={active && playing} />
                             <div className="min-w-0 flex-1">
                               <div className="truncate text-sm font-medium" style={{ color: active ? "var(--accent)" : "var(--text)" }}>
                                 {t.name}
@@ -871,7 +1135,7 @@ export default function MusicPlayer() {
         {track && tab !== "player" && (
           <div className="glass mb-2 flex items-center gap-3 rounded-2xl p-2 pr-3">
             <button onClick={() => setTab("player")} className="flex min-w-0 flex-1 items-center gap-3 text-left" aria-label="Open Now Playing">
-              <Artwork name={track.name} size="sm" playing={playing} />
+              <Artwork name={track.name} image={track.image} size="sm" playing={playing} />
               <span className="truncate text-sm font-medium">{track.name}</span>
             </button>
             <button onClick={togglePlay} aria-label={playing ? "Pause" : "Play"} className="tap h-10 w-10 shrink-0 rounded-full p-2.5">

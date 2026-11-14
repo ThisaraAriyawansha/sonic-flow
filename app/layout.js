@@ -1,9 +1,28 @@
 import "./globals.css";
 
+const siteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL ||
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000");
+
+const description = "Play your music, shape bass and treble, and download tracks with your EQ applied";
+
 export const metadata = {
+  metadataBase: new URL(siteUrl),
   title: "SonicFlow",
-  description: "Play your music, shape bass and treble, and download tracks with your EQ applied",
+  description,
   appleWebApp: { capable: true, title: "SonicFlow", statusBarStyle: "black-translucent" },
+  openGraph: {
+    type: "website",
+    siteName: "SonicFlow",
+    title: "SonicFlow",
+    description,
+    url: "/",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "SonicFlow",
+    description,
+  },
 };
 
 export const viewport = {
