@@ -1,6 +1,183 @@
 @import "tailwindcss";
 
+:root {
+  --bg: #f5f5f7;
+  --card: rgba(255, 255, 255, 0.72);
+  --card-solid: #ffffff;
+  --border: rgba(0, 0, 0, 0.08);
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --track: rgba(0, 0, 0, 0.12);
+  --hover: rgba(0, 0, 0, 0.05);
+  --accent: #fa2d48;
+  --accent-soft: rgba(250, 45, 72, 0.12);
+  --shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+}
+
+/* Dark: follows the system unless the user forces light, or forced with data-theme="dark" */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #000000;
+    --card: rgba(28, 28, 30, 0.66);
+    --card-solid: #1c1c1e;
+    --border: rgba(255, 255, 255, 0.08);
+    --text: #f5f5f7;
+    --muted: #98989d;
+    --track: rgba(255, 255, 255, 0.16);
+    --hover: rgba(255, 255, 255, 0.06);
+    --accent: #ff375f;
+    --accent-soft: rgba(255, 55, 95, 0.16);
+    --shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #000000;
+  --card: rgba(28, 28, 30, 0.66);
+  --card-solid: #1c1c1e;
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #f5f5f7;
+  --muted: #98989d;
+  --track: rgba(255, 255, 255, 0.16);
+  --hover: rgba(255, 255, 255, 0.06);
+  --accent: #ff375f;
+  --accent-soft: rgba(255, 55, 95, 0.16);
+  --shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+html,
 body {
-  background: #000;
-  color: #fff;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", "Segoe UI",
+    system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Frosted glass card */
+.glass {
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  backdrop-filter: saturate(180%) blur(30px);
+}
+
+/* Apple-style thin sliders. Set --lo / --hi (percent) for the filled section. */
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  cursor: pointer;
+  background: linear-gradient(
+    to right,
+    var(--track) var(--lo, 0%),
+    var(--fill-color, var(--text)) var(--lo, 0%),
+    var(--fill-color, var(--text)) var(--hi, 0%),
+    var(--track) var(--hi, 0%)
+  );
+  transition: height 0.15s ease;
+}
+@media (hover: hover) {
+  .slider:hover {
+    height: 8px;
+  }
+}
+.slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  border: 0.5px solid rgba(0, 0, 0, 0.08);
+  transition: transform 0.15s ease;
+}
+.slider:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+.slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 0.5px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.slider.accent {
+  --fill-color: var(--accent);
+}
+
+/* Touch screens: bigger, iOS-sized thumbs that are easy to grab */
+@media (pointer: coarse) {
+  .slider {
+    height: 8px;
+  }
+  .slider::-webkit-slider-thumb {
+    width: 26px;
+    height: 26px;
+  }
+  .slider::-moz-range-thumb {
+    width: 26px;
+    height: 26px;
+  }
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+button,
+input {
+  touch-action: manipulation;
+}
+body {
+  overscroll-behavior-y: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.tap {
+  -webkit-user-select: none;
+  user-select: none;
+  transition: transform 0.12s ease, background-color 0.15s ease, opacity 0.15s ease;
+}
+.tap:active {
+  transform: scale(0.94);
+}
+
+.scroll-thin::-webkit-scrollbar {
+  width: 6px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--track);
+  border-radius: 999px;
+}
+
+@keyframes bars {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+.eq-bar {
+  transform-origin: bottom;
+  animation: bars 0.9s ease-in-out infinite;
 }
