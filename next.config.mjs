@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
-const basePath = process.env.NODE_ENV === "production" ? "/sonic-flow" : "";
+// GitHub Pages serves the site under /sonic-flow; Vercel (and local) serve from root.
+const basePath = process.env.GITHUB_ACTIONS === "true" ? "/sonic-flow" : "";
 
 const nextConfig = {
   output: "export",
