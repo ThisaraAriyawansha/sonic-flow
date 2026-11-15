@@ -319,9 +319,9 @@ function Segmented({ options, value, onChange, label }) {
   );
 }
 
-function EqSlider({ label, hint, value, onChange }) {
+function EqSlider({ label, hint, value, onChange, disabled = false }) {
   return (
-    <div>
+    <div className={disabled ? "pointer-events-none opacity-40" : undefined} aria-disabled={disabled}>
       <div className="mb-2 flex items-baseline justify-between">
         <div>
           <span className="text-sm font-medium">{label}</span>
@@ -342,6 +342,7 @@ function EqSlider({ label, hint, value, onChange }) {
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         onDoubleClick={() => onChange(0)}
+        disabled={disabled}
         aria-label={`${label} gain`}
         className="slider accent"
         style={fillStyle(value, EQ_MIN, EQ_MAX, true)}
@@ -971,7 +972,7 @@ export default function MusicPlayer() {
                 <h3 className="text-lg font-semibold tracking-tight">Sound</h3>
                 <button
                   onClick={() => applyPreset("flat")}
-                  disabled={!bass && !treble}
+                  disabled={isYt || (!bass && !treble)}
                   className="tap text-sm font-medium disabled:opacity-40"
                   style={{ color: "var(--accent)" }}
                 >
@@ -986,8 +987,9 @@ export default function MusicPlayer() {
                     <button
                       key={p.id}
                       onClick={() => applyPreset(p.id)}
+                      disabled={isYt}
                       aria-pressed={active}
-                      className="tap grow basis-[calc(33%-0.5rem)] rounded-full px-3 py-2 text-sm font-medium lg:basis-auto lg:py-1.5 lg:text-xs"
+                      className="tap grow basis-[calc(33%-0.5rem)] rounded-full px-3 py-2 text-sm font-medium disabled:opacity-40 lg:basis-auto lg:py-1.5 lg:text-xs"
                       style={{
                         background: active ? "var(--accent)" : "var(--hover)",
                         color: active ? "#fff" : "var(--text)",
@@ -1001,8 +1003,8 @@ export default function MusicPlayer() {
               </div>
 
               <div className="space-y-7 lg:space-y-5">
-                <EqSlider label="Bass" hint={`${BASS_FREQ} Hz`} value={bass} onChange={setBass} />
-                <EqSlider label="Treble" hint={`${TREBLE_FREQ / 1000} kHz`} value={treble} onChange={setTreble} />
+                <EqSlider label="Bass" hint={`${BASS_FREQ} Hz`} value={bass} onChange={setBass} disabled={isYt} />
+                <EqSlider label="Treble" hint={`${TREBLE_FREQ / 1000} kHz`} value={treble} onChange={setTreble} disabled={isYt} />
               </div>
 
               <button
