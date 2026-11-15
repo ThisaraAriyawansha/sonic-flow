@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <!-- SonicFlow captures this tab's audio for the EQ; the title is how you find it in the share dialog. -->
+    <title>SonicFlow · YouTube</title>
+    <link rel="icon" href="/logo.png" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #000;
+        color: #98989d;
+        font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+      #player {
+        flex: 1;
+        min-height: 0;
+      }
+      #player iframe {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
+      p {
+        margin: 0;
+        padding: 6px 10px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- SonicFlow puts the official YouTube player in here. -->
+    <div id="player"></div>
+    <p>Keep this window open while the EQ is on. Controls stay in SonicFlow.</p>
+    <script>
+      // Lets SonicFlow check that this is the tab you shared.
+      try {
+        navigator.mediaDevices?.setCaptureHandleConfig?.({ handle: "sonicflow-youtube", permittedOrigins: [location.origin] });
+      } catch (e) {}
+    </script>
+  </body>
+</html>

@@ -122,6 +122,28 @@ body {
   --fill-color: var(--accent);
 }
 
+/* Vertical sliders for the graphic EQ: min at the bottom, filled from the 0 dB centre. */
+.slider.vertical {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 6px;
+  height: 140px;
+  background: linear-gradient(
+    to top,
+    var(--track) var(--lo, 0%),
+    var(--fill-color, var(--text)) var(--lo, 0%),
+    var(--fill-color, var(--text)) var(--hi, 0%),
+    var(--track) var(--hi, 0%)
+  );
+  transition: width 0.15s ease;
+}
+@media (hover: hover) {
+  .slider.vertical:hover {
+    height: 140px;
+    width: 8px;
+  }
+}
+
 /* Touch screens: bigger, iOS-sized thumbs that are easy to grab */
 @media (pointer: coarse) {
   .slider {
@@ -163,6 +185,109 @@ body {
 }
 .tap:active {
   transform: scale(0.94);
+}
+
+/* ---------- Visual effects sheet (Apple-style) ---------- */
+.glass-sheet {
+  background: color-mix(in srgb, var(--card-solid) 86%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(30px);
+  backdrop-filter: saturate(180%) blur(30px);
+  box-shadow: 0 0 0 0.5px var(--border), 0 30px 80px -20px rgba(0, 0, 0, 0.45);
+}
+.glass-bar {
+  background: color-mix(in srgb, var(--card-solid) 72%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+.fade-x {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 16px, #000 calc(100% - 28px), transparent 100%);
+}
+/* Thin, rounded horizontal scrollbar (category row) */
+.scroll-x-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--track, rgba(127, 127, 127, 0.4)) transparent;
+}
+.scroll-x-thin::-webkit-scrollbar {
+  height: 6px;
+}
+.scroll-x-thin::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 0 20px;
+}
+.scroll-x-thin::-webkit-scrollbar-thumb {
+  background: var(--track, rgba(127, 127, 127, 0.4));
+  border-radius: 999px;
+}
+.scroll-x-thin::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+/* Touch screens swipe the row, so the bar is only clutter there. */
+@media (hover: none) and (pointer: coarse) {
+  .scroll-x-thin {
+    scrollbar-width: none;
+  }
+  .scroll-x-thin::-webkit-scrollbar {
+    display: none;
+  }
+}
+/* Respect notches / rounded corners on the sides (landscape phones). */
+.vfx-sheet {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+/* Landscape phones: very little height, so use the whole screen and trim the header. */
+@media (max-height: 520px) {
+  .vfx-sheet {
+    height: 100dvh !important;
+    max-width: none !important;
+    border-radius: 0 !important;
+  }
+  .vfx-backdrop {
+    padding: 0 !important;
+  }
+  .vfx-grabber {
+    display: none !important;
+  }
+  .vfx-header {
+    padding-top: 0.75rem !important;
+    padding-bottom: 0.5rem !important;
+  }
+  .vfx-header h3 {
+    font-size: 20px !important;
+  }
+  .vfx-header p {
+    display: none !important;
+  }
+}
+.vfx-card:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.vfx-backdrop {
+  animation: vfx-fade 0.22s ease-out;
+}
+.vfx-sheet {
+  animation: vfx-up 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (min-width: 640px) {
+  .vfx-sheet {
+    animation: vfx-pop 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+}
+@keyframes vfx-fade {
+  from { opacity: 0; }
+}
+@keyframes vfx-up {
+  from { transform: translateY(100%); }
+}
+@keyframes vfx-pop {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vfx-backdrop,
+  .vfx-sheet {
+    animation: none;
+  }
 }
 
 .scroll-thin::-webkit-scrollbar {
